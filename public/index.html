@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>High Frequency Data Viewer</title>
+</head>
+<body>
+  <h1>High Frequency Data Viewer</h1>
+  <button id="fetchData">Fetch Data (Last 5 seconds)</button>
+  <div id="dataDisplay" style="max-height: 500px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px;"></div>
+
+  <script>
+    document.getElementById('fetchData').addEventListener('click', () => {
+      // Fetch data from the last 5 seconds.
+      const now = Date.now();
+      const fiveSecondsAgo = now - 5000;
+      fetch(`/api/data?start=${fiveSecondsAgo}&end=${now}`)
+        .then(response => response.json())
+        .then(data => {
+          const display = document.getElementById('dataDisplay');
+          display.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        })
+        .catch(error => {
+          console.error('Error fetching data:', error);
+        });
+    });
+  </script>
+</body>
+</html>
