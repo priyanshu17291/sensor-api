@@ -52,16 +52,15 @@
 //   console.log(`Server listening at http://localhost:${port}`);
 // });
 
-
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
-// Enable CORS
+// Enable CORS for all routes
 app.use(cors());
 
 // In-memory datastore for sensor readings.
@@ -71,19 +70,18 @@ let dataStore = [];
 const csvPath = path.join(__dirname, 'sensor_data.csv');
 const rawCsv = fs.readFileSync(csvPath, 'utf-8');
 
-// Split on newlines, filter out empty lines, then split on tabs or commas:
 const csvRows = rawCsv
   .split(/\r?\n/)
   .filter(line => line.trim())
-  .map(line => line
-    .trim()
-    .split(/\t|,/)
-    .map(str => parseFloat(str))
+  .map(line =>
+    line
+      .trim()
+      .split(/\t|,/)
+      .map(str => parseFloat(str))
   );
 
-// Sanity check:
 if (csvRows.length === 0) {
-  console.error('No data found in data.csv!');
+  console.error('No data found in sensor_data.csv!');
   process.exit(1);
 }
 
@@ -91,12 +89,11 @@ if (csvRows.length === 0) {
 let csvIndex = 0;
 
 // --- High‑frequency data generator ---
+// (still 1 ms here, but container will clamp it)
 setInterval(() => {
-  // Grab next row and advance (wrapping at end)
   const row = csvRows[csvIndex];
   csvIndex = (csvIndex + 1) % csvRows.length;
 
-  // First entry in CSV row is the original time; we ignore it and use Date.now() instead
   const now = Date.now();
   const values = row.slice(1);
 
@@ -108,7 +105,7 @@ setInterval(() => {
   }
 }, 1);
 
-// --- API endpoint ---
+// --- Polling API endpoint ---
 app.get('/api/data', (req, res) => {
   let start = req.query.start ? parseInt(req.query.start, 10) : null;
   let end   = req.query.end   ? parseInt(req.query.end,   10) : null;
@@ -120,8 +117,33 @@ app.get('/api/data', (req, res) => {
   res.json(filtered);
 });
 
-// Serve static files and start server
-app.use(express.static('public'));
+// --- Streaming endpoint via Server‑Sent Events (SSE) ---
+app.get('/api/stream', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  const sendLatest = () => {
+    const last = dataStore[dataStore.length - 1];
+    if (last) {
+      res.write(`data: ${JSON.stringify(last)}\n\n`);
+    }
+  };
+
+  // Containers generally honor ~10 ms minimum intervals
+  const timer = setInterval(sendLatest, 10);
+
+  req.on('close', () => {
+    clearInterval(timer);
+  });
+});
+
+// Serve your React build (or any static files) from public/
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Start the server
 app.listen(port, () => {
-  console.log(`Server listening at http://localhost:${port}`);
+  console.log(`Server listening on port ${port}`);
 });
